@@ -47,6 +47,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import android.util.Range;
 
 public class CameraPlugin implements MethodCallHandler {
 
@@ -251,6 +252,7 @@ public class CameraPlugin implements MethodCallHandler {
     private MediaRecorder mediaRecorder;
     private boolean recordingVideo;
     private boolean enableAudio;
+    private Range<Integer> aeFPSRange;
 
     Camera(
         final String cameraName,
@@ -289,6 +291,7 @@ public class CameraPlugin implements MethodCallHandler {
         isFrontFacing =
             characteristics.get(CameraCharacteristics.LENS_FACING)
                 == CameraMetadata.LENS_FACING_FRONT;
+        setBestAERange(characteristics);
         computeBestCaptureSize(streamConfigurationMap);
         computeBestPreviewAndRecordingSize(streamConfigurationMap, minHeight, captureSize);
 
@@ -375,6 +378,29 @@ public class CameraPlugin implements MethodCallHandler {
               == PackageManager.PERMISSION_GRANTED;
     }
 
+    private void setBestAERange(CameraCharacteristics characteristics) {
+      Range<Integer>[] fpsRanges =
+              characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+
+      if (fpsRanges.length <= 0) {
+        return;
+      }
+
+      Integer idx = 0;
+      Integer biggestDiference = 0;
+
+      for (Integer i = 0; i < fpsRanges.length; i++) {
+        Integer currentDifference = fpsRanges[i].getUpper() - fpsRanges[i].getLower();
+
+        if (currentDifference > biggestDiference) {
+          idx = i;
+          biggestDiference = currentDifference;
+        }
+      }
+
+      aeFPSRange = fpsRanges[idx];
+    }
+
     private void computeBestPreviewAndRecordingSize(
         StreamConfigurationMap streamConfigurationMap, int minHeight, Size captureSize) {
       Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
@@ -450,7 +476,7 @@ public class CameraPlugin implements MethodCallHandler {
       mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
       if (enableAudio) mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
       mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-      mediaRecorder.setVideoEncodingBitRate(1024 * 1000);
+      mediaRecorder.setVideoEncodingBitRate(3072 * 1000);
       if (enableAudio) mediaRecorder.setAudioSamplingRate(16000);
       mediaRecorder.setVideoFrameRate(27);
       mediaRecorder.setVideoSize(videoSize.getWidth(), videoSize.getHeight());
@@ -663,6 +689,17 @@ public class CameraPlugin implements MethodCallHandler {
                   Camera.this.cameraCaptureSession = cameraCaptureSession;
                   captureRequestBuilder.set(
                       CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+
+                  if (Camera.this.aeFPSRange != null) {
+                    captureRequestBuilder.set(
+                            CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Camera.this.aeFPSRange);
+                  }
+                  captureRequestBuilder.set(CaptureRequest.CONTROL_AE_LOCK, false);
+                  captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
+                  captureRequestBuilder.set(CaptureRequest.CONTROL_AWB_MODE, CameraMetadata.CONTROL_AWB_MODE_AUTO);
+                  captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                  captureRequestBuilder.set(CaptureRequest.STATISTICS_FACE_DETECT_MODE, CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE);
+
                   cameraCaptureSession.setRepeatingRequest(
                       captureRequestBuilder.build(), null, null);
                   mediaRecorder.start();
