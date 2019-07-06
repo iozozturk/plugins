@@ -223,6 +223,9 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     }
 
     void eventListener(dynamic event) {
+      if (_isDisposed) {
+        return;
+      }
       final Map<dynamic, dynamic> map = event;
       switch (map['event']) {
         case 'initialized':
@@ -463,7 +466,7 @@ class _VideoPlayerState extends State<VideoPlayer> {
   @override
   void didUpdateWidget(VideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    oldWidget.controller.removeListener(_listener);
+    if (!oldWidget.controller._isDisposed) oldWidget.controller.removeListener(_listener);
     _textureId = widget.controller.textureId;
     widget.controller.addListener(_listener);
   }
